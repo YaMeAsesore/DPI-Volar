@@ -82,3 +82,7 @@ modificarlo libremente para tu propio uso.
 
 Este proyecto está bajo la licencia MIT — consulta el archivo 
 [LICENSE](LICENSE) para más detalles.
+
+## DESCARGA:
+
+## https://www.mediafire.com/file/w9bmv0ilbtb9a43/DPI-VOLAR.apk/file
