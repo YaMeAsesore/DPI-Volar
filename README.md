@@ -37,3 +37,8 @@ en contante mejora para implementarlo lo mas pronto posible.
 - Control simple de activar/desactivar protección desde la pantalla principal
 - Procesamiento 100% local del tráfico
 
+ ![image alt](https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213310.png)  ![image alt](https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213409.png)
+
+
+
+![image alt](https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213529.png)  ![image alt](https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213517.png)
