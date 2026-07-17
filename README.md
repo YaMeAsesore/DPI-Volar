@@ -28,7 +28,7 @@ tráfico o cambiar tu ubicación, y **DPI Volar no hace eso**:
 
 Es una herramienta de manipulación de paquetes local para evadir 
 DPI, no una VPN de anonimato. Si buscas ocultar tu IP o tu ubicación, esta herramienta esta
-en contante mejora para implementarlo lo mas pronto posible.
+en constante mejora para implementarlo, lo mas pronto posible.
 
 ## Características
 
@@ -37,8 +37,48 @@ en contante mejora para implementarlo lo mas pronto posible.
 - Control simple de activar/desactivar protección desde la pantalla principal
 - Procesamiento 100% local del tráfico
 
- ![image alt](https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213310.png)  ![image alt](https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213409.png)
+<p float="left">
+  <img src="https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213310.png?raw=true" width="150"/>
+  <img src="https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213409.png?raw=true" width="150"/>
+  <img src="https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213529.png?raw=true" width="150"/>
+  <img src="https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213517.png?raw=true" width="150"/>
+</p>
 
 
+## Cómo compilar
 
-![image alt](https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213529.png)  ![image alt](https://github.com/YaMeAsesore/DPI-Volar/blob/02122570b02902f5d06257c3566a6b089ef110d7/Screenshot_20260716_213517.png)
+### Requisitos
+
+- Android Studio (versión reciente, Hedgehog o superior recomendado)
+- JDK 17
+- Kotlin (gestionado por Gradle, no requiere instalación aparte)
+- SDK de Android mínimo/objetivo: revisa `build.gradle.kts` para las versiones exactas
+
+### Pasos
+
+1. Clona el repositorio:
+```bash
+   git clone https://github.com/YaMeAsesore/DPI-Volar.git
+```
+2. Ábrelo en Android Studio (`Open` → selecciona la carpeta del proyecto)
+3. Espera a que Gradle sincronice las dependencias
+4. Conecta un dispositivo o usa un emulador con Android 8.0 (API 26) o superior
+5. Ejecuta con el botón ▶️ Run
+
+
+## Estado del proyecto
+
+Este proyecto está en desarrollo activo. La fase actual establece la base 
+de la VPN local (interfaz TUN, lectura/escritura de paquetes); la lógica 
+específica de evasión de DPI (fragmentación de handshake TLS, manejo de SNI, 
+etc.) se está construyendo sobre esta base.
+
+## Contribuir
+
+Este proyecto es de código abierto. Puedes hacer fork y 
+modificarlo libremente para tu propio uso. 
+
+## Licencia
+
+Este proyecto está bajo la licencia MIT — consulta el archivo 
+[LICENSE](LICENSE) para más detalles.
