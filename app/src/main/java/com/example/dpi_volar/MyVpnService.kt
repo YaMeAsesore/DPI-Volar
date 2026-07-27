@@ -28,6 +28,10 @@ class MyVpnService : VpnService() {
         const val ACTION_STOP = "com.example.dpi_volar.STOP"
         private const val NOTIFICATION_CHANNEL_ID = "dpi_volar_channel"
         private const val NOTIFICATION_ID = 1
+
+        @Volatile
+        var isRunning: Boolean = false
+            private set
     }
 
     private fun createNotificationChannel() {
@@ -68,34 +72,65 @@ class MyVpnService : VpnService() {
         return START_STICKY
     }
 
-    private suspend fun handleDnsQuery(packet: IPv4Packet, udp: UdpSegment, tunOutput: FileOutputStream) {
+    /**
+     * Resuelve una consulta DNS por UDP plano.
+     * IMPORTANTE: todos los parámetros deben ser copias independientes
+     * (ByteArray propios, no vistas sobre el buffer compartido de forwardPackets),
+     * porque esta función corre en una corrutina lanzada de forma asíncrona
+     * y el buffer principal puede sobrescribirse antes de que esto se ejecute.
+     */
+    private suspend fun handleDnsQuery(
+        queryPayload: ByteArray,
+        srcIpBytes: ByteArray,
+        dstIpBytes: ByteArray,
+        srcPort: Int,
+        dstPort: Int,
+        tunOutput: FileOutputStream
+    ) {
+        // 1. Revisa el cache antes de hacer cualquier trabajo de red
+        val cachedResponse = DnsCache.get(queryPayload)
+        if (cachedResponse != null) {
+            val replyPacket = PacketBuilder.buildUdpPacket(
+                srcIp = dstIpBytes, dstIp = srcIpBytes,
+                srcPort = dstPort, dstPort = srcPort,
+                payload = cachedResponse
+            )
+            synchronized(tunOutput) {
+                tunOutput.write(replyPacket)
+            }
+            return // <-- respuesta instantánea, sin tocar la red
+        }
+
+        // 2. No hay cache: resuelve de verdad y guarda el resultado para la próxima
         try {
-            val socket = java.net.DatagramSocket()
-            protect(socket)
+            java.net.DatagramSocket().use { socket ->
+                protect(socket)
 
-            val queryPayload = udp.getPayload()
-            val dnsServerAddr = java.net.InetAddress.getByAddress(packet.destIpBytes)
-            val outPacket = java.net.DatagramPacket(queryPayload, queryPayload.size, dnsServerAddr, udp.destPort)
+                val dnsServerAddr = java.net.InetAddress.getByAddress(dstIpBytes)
+                val outPacket = java.net.DatagramPacket(queryPayload, queryPayload.size, dnsServerAddr, dstPort)
 
-            withContext(Dispatchers.IO) {
-                socket.soTimeout = 5000
-                socket.send(outPacket)
+                withContext(NetworkDispatcher.IO) {
+                    socket.soTimeout = 5000
+                    socket.send(outPacket)
 
-                val responseBuffer = ByteArray(4096)
-                val responsePacket = java.net.DatagramPacket(responseBuffer, responseBuffer.size)
-                socket.receive(responsePacket)
+                    val responseBuffer = ByteArray(4096)
+                    val responsePacket = java.net.DatagramPacket(responseBuffer, responseBuffer.size)
+                    socket.receive(responsePacket)
 
-                val responseData = responseBuffer.copyOf(responsePacket.length)
-                val replyPacket = PacketBuilder.buildUdpPacket(
-                    srcIp = packet.destIpBytes, dstIp = packet.sourceIpBytes,
-                    srcPort = udp.destPort, dstPort = udp.sourcePort,
-                    payload = responseData
-                )
-                synchronized(tunOutput) {
-                    tunOutput.write(replyPacket)
+                    val responseData = responseBuffer.copyOf(responsePacket.length)
+
+                    DnsCache.put(queryPayload, responseData) // <-- guarda para la próxima vez
+
+                    val replyPacket = PacketBuilder.buildUdpPacket(
+                        srcIp = dstIpBytes, dstIp = srcIpBytes,
+                        srcPort = dstPort, dstPort = srcPort,
+                        payload = responseData
+                    )
+                    synchronized(tunOutput) {
+                        tunOutput.write(replyPacket)
+                    }
                 }
             }
-            socket.close()
         } catch (e: Exception) {
             Log.e(TAG, "Error resolviendo DNS: ${e.message}")
         }
@@ -121,6 +156,7 @@ class MyVpnService : VpnService() {
         }
 
         Log.i(TAG, "VPN establecida, iniciando bucle de reenvío")
+        isRunning = true
         job = scope.launch { forwardPackets() }
     }
 
@@ -133,14 +169,38 @@ class MyVpnService : VpnService() {
         while (coroutineContext.isActive) {
             try {
                 val length = input.read(buffer)
-                if (length <= 0) continue
+
+                if (length < 0) {
+                    // -1 significa fin de stream / descriptor cerrado o inválido:
+                    // no hay forma de que vuelva a dar datos, así que salimos del
+                    // bucle en vez de seguir girando en vacío.
+                    Log.e(TAG, "read() de la TUN devolvió -1, deteniendo bucle de reenvío")
+                    break
+                }
+                if (length == 0) {
+                    // Lectura vacía puntual: cede el hilo un instante en vez de
+                    // reintentar inmediatamente en un bucle caliente (esto era lo
+                    // que estaba quemando CPU y calentando el dispositivo).
+                    delay(5)
+                    continue
+                }
 
                 val packet = IPv4Packet(buffer, length)
 
                 if (packet.isUdp()) {
                     val udp = packet.getUdpSegment()
                     if (udp != null && udp.destPort == 53) {
-                        scope.launch { handleDnsQuery(packet, udp, output) }
+                        // Copiamos TODO lo necesario de forma síncrona AHORA,
+                        // antes de que el buffer compartido se reutilice.
+                        val queryPayload = udp.getPayload()
+                        val srcIpBytes = packet.sourceIpBytes
+                        val dstIpBytes = packet.destIpBytes
+                        val srcPort = udp.sourcePort
+                        val dstPort = udp.destPort
+
+                        scope.launch {
+                            handleDnsQuery(queryPayload, srcIpBytes, dstIpBytes, srcPort, dstPort, output)
+                        }
                     }
                     continue
                 }
@@ -178,11 +238,15 @@ class MyVpnService : VpnService() {
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Error en el bucle de reenvío: ${e.message}")
+                // Si el error se repite en cada vuelta (ej. TUN en mal estado),
+                // este delay evita que el catch se convierta en otro bucle caliente.
+                delay(20)
             }
         }
     }
 
     private fun stopVpn() {
+        isRunning = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         job?.cancel()
         sessions.values.forEach { it.close() }

@@ -1,14 +1,18 @@
 package com.example.dpi_volar
 
+enum class DpiTechnique {
+    NONE,           // sin modificación, passthrough normal
+    SPLIT,          // corta el ClientHello en 2 (la que ya tenías)
+    DISORDER,       // manda los fragmentos en orden invertido con delay
+    FAKE_PACKET     // manda un paquete señuelo (decoy) antes del real
+}
+
 object DpiConfig {
     var enabled: Boolean = true
-
-    /** Si es true, busca el SNI real y corta ahí dentro. Si falla, usa splitPosition. */
     var useSniSplit: Boolean = true
-
-    /** Byte de corte usado solo si useSniSplit falla o está desactivado. */
     var splitPosition: Int = 2
-
     var fragmentDelayMs: Long = 10
-    var reverseOrder: Boolean = false
+
+    /** Técnica activa por defecto para conexiones nuevas sin historial. */
+    var defaultTechnique: DpiTechnique = DpiTechnique.SPLIT
 }
