@@ -80,8 +80,7 @@ del SNI para la técnica de evasión.
 - El cache DNS usa un TTL fijo, no el TTL real del registro — aceptable
   para navegación normal, pero puede servir una IP vieja hasta por 30s
   si un dominio cambia de IP muy rápido (balanceadores agresivos).
-- Pendiente de validar contra sistemas DPI reales en la red del
-  usuario; las mejoras de esta versión son de estabilidad/rendimiento,
+- Las mejoras de esta versión son de estabilidad/rendimiento,
   no cambian la efectividad de evasión en sí.
 
 ## [1.0.0] - 2026-07-11
