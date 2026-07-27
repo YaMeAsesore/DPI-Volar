@@ -83,6 +83,9 @@ modificarlo libremente para tu propio uso.
 Este proyecto está bajo la licencia MIT — consulta el archivo 
 [LICENSE](LICENSE) para más detalles.
 
+## V2
+https://github.com/YaMeAsesore/DPI-Volar/blob/e4540cc12dab9dd97cc6ce81cafb97df1c34ab40/CHANGELOG.md
+
 ## DESCARGA:
 
 ## https://www.mediafire.com/file/43jraftynsfnd4a/DPI-VOLARv2.apk/file
