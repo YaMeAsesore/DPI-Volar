@@ -55,11 +55,7 @@ y una lentitud notable de conexión con muchas sesiones concurrentes
   promedio/pico frente a sin la app activa — dentro de lo esperable
   para una VPN en funcionamiento normal, y muy por debajo del
   calentamiento severo reportado antes de esta ronda de cambios.
-- Pendiente: validar en dispositivo físico (no emulador) bajo uso
-  prolongado, y revisar por qué `TlsParser.findSniHostname` no siempre
-  encuentra el SNI (cae a corte de posición fija con más frecuencia de
-  la esperada — no afecta velocidad, pero sí reduce la efectividad de
-  la técnica SPLIT/DISORDER contra DPI real).
+
 
 ## [2.0.0] - 2026-07-27
 
