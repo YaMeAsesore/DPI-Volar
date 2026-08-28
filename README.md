@@ -107,8 +107,20 @@ posible.
 Este proyecto está en desarrollo activo. La v2 ya incluye la lógica
 funcional de evasión de DPI: detección y fragmentación del handshake TLS,
 corte consciente del SNI, rotación automática de técnica y cache de DNS.
-Las siguientes fases se enfocan en robustecer estas técnicas y validarlas
-contra sistemas de DPI reales.
+
+La rama `main` incluye además una segunda ronda de optimizaciones de
+rendimiento (ver [CHANGELOG.md](CHANGELOG.md), v2.1.0) enfocada en
+consumo de batería/calor y estabilidad de conexión bajo navegación con
+muchas conexiones concurrentes: un pool de hilos de red sin cuello de
+botella artificial, un único escritor serializado hacia la interfaz TUN,
+confirmaciones TCP (ACK) coalescidas en vez de una corrutina por paquete,
+y cálculo perezoso de campos en el parseo de paquetes IPv4. Estos cambios
+todavía no están empaquetados en un release/APK etiquetado — el
+[APK v2.0.0](#-descargas) disponible para descarga no los incluye
+todavía.
+
+Las siguientes fases se enfocan en robustecer las técnicas de evasión y
+validarlas contra sistemas de DPI reales.
 
 ---
 

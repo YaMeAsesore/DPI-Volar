@@ -1,5 +1,66 @@
 # Changelog
 
+## [2.1.0] - 2026-08-27
+
+Tercera ronda de correcciones, enfocada en dos problemas que persistían
+tras la v2.0.0 y que se detectaron con logs de dispositivo real: consumo
+de batería/calor todavía por encima de lo esperado con navegación pesada,
+y una lentitud notable de conexión con muchas sesiones concurrentes
+(errores en cascada tipo `Socket is closed` / `Connection reset` /
+`Broken pipe`).
+
+### Corregido
+
+- **Agotamiento del pool de hilos de red (`NetworkDispatcher`).** El
+  límite fijo de 48 hilos introducido en la v2.0.0 partía de la premisa
+  de que menos hilos = menos calor, válida para hilos que hacen trabajo
+  de CPU, pero no para hilos bloqueados en `socket.read()`/`connect()`
+  esperando red (que el sistema operativo mantiene dormidos, sin costo
+  de CPU). Con navegación normal (30-50 conexiones concurrentes por
+  página), el pool de 48 se saturaba: conexiones nuevas se quedaban sin
+  hilo disponible, expiraban su timeout, y para cuando conseguían uno el
+  navegador ya había cerrado su lado, produciendo la cascada de errores
+  de socket mencionada arriba y reintentos constantes (percibidos como
+  "internet más lento"). Se reemplazó por un `cachedThreadPool` sin techo
+  artificial bajo, dimensionado dinámicamente según la demanda real.
+- **Contención de lock al escribir en la interfaz TUN.** Todas las
+  sesiones TCP y la resolución DNS competían por un único
+  `synchronized(tunOutput)` compartido en cada paquete saliente. Con
+  muchas conexiones simultáneas esto generaba cambios de contexto
+  constantes entre hilos. Se introdujo `TunWriter`, que serializa todas
+  las escrituras a través de un canal con una única corrutina
+  consumidora, eliminando la contención sin sacrificar el orden de
+  escritura.
+- **Corrutina nueva por cada paquete de datos entrante solo para el
+  ACK.** `TcpSession.onClientData` lanzaba `scope.launch { sendControl(TCP_ACK) }`
+  por cada paquete recibido del cliente — cientos o miles por segundo
+  bajo tráfico normal. Como el ACK de TCP es acumulativo, se reemplazó
+  por un canal `CONFLATED` con un único consumidor por sesión: ráfagas
+  de paquetes se coalescen en un solo ACK con el `seq` más reciente, sin
+  perder la confirmación casi inmediata que evita retransmisiones.
+- **Cálculo innecesario de campos en `IPv4Packet`.** Los campos
+  (`sourceIp`, `destIp`, `sourceIpBytes`, `destIpBytes`, etc.) eran `val`
+  eager, calculados para *todo* paquete que cruza la VPN, incluyendo
+  paquetes descartados dos líneas después por no ser TCP/UDP. Se
+  convirtieron en `by lazy`, calculándose solo si de verdad se llegan a
+  usar.
+
+### Notas de verificación
+
+- Confirmado en logs de dispositivo: tras el cambio de `NetworkDispatcher`
+  desaparecieron los errores de socket en cascada y se observó mejora
+  notable de velocidad de navegación.
+- Prueba de temperatura (5:40 min, mismo navegador, condiciones no
+  perfectamente controladas) mostró una diferencia de ~1°C
+  promedio/pico frente a sin la app activa — dentro de lo esperable
+  para una VPN en funcionamiento normal, y muy por debajo del
+  calentamiento severo reportado antes de esta ronda de cambios.
+- Pendiente: validar en dispositivo físico (no emulador) bajo uso
+  prolongado, y revisar por qué `TlsParser.findSniHostname` no siempre
+  encuentra el SNI (cae a corte de posición fija con más frecuencia de
+  la esperada — no afecta velocidad, pero sí reduce la efectividad de
+  la técnica SPLIT/DISORDER contra DPI real).
+
 ## [2.0.0] - 2026-07-27
 
 Segunda versión funcional de DPI-Volar. Se enfoca en tres problemas
