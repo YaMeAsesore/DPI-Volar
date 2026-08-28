@@ -8,16 +8,36 @@ class IPv4Packet(private val raw: ByteArray, private val length: Int) {
         return UdpSegment(raw, payloadOffset, length)
     }
 
-    val version: Int = (raw[0].toInt() shr 4) and 0x0F
-    val ihl: Int = (raw[0].toInt() and 0x0F) * 4
-    val protocol: Int = raw[9].toInt() and 0xFF
-    val sourceIp: String = ipToString(raw, 12)
-    val destIp: String = ipToString(raw, 16)
+    // OPTIMIZACIÓN: antes estos campos eran `val` normales, es decir, se
+    // calculaban TODOS en el instante en que se crea el IPv4Packet — para
+    // CADA paquete que pasa por la VPN, sin excepción. Eso incluye construir
+    // dos Strings de IP por concatenación (sourceIp/destIp) y copiar 8 bytes
+    // (sourceIpBytes/destIpBytes) aunque el paquete se vaya a descartar dos
+    // líneas después en forwardPackets() por no ser TCP ni UDP, o aunque ese
+    // campo en particular nunca se llegue a leer para ese paquete en concreto.
+    // Con tráfico normal esto son miles de paquetes por segundo -> miles de
+    // Strings y arrays basura por segundo para el recolector de basura, lo
+    // cual es trabajo de CPU constante y de fondo, exactamente el tipo de
+    // cosa que se nota como "calentamiento constante" aunque cada operación
+    // individual sea barata.
+    //
+    // `by lazy` hace que el valor se calcule solo la primera vez que
+    // alguien lo lee. Usamos NONE (sin sincronización) porque cada
+    // IPv4Packet se construye y se lee dentro del mismo hilo del bucle de
+    // forwardPackets antes de que cualquier valor cruce a otra corrutina
+    // (los sitios que necesitan pasar estos datos a otra corrutona, como
+    // handleDnsQuery, ya los leen y copian a variables locales ANTES de
+    // lanzar esa corrutina — ver comentario en MyVpnService).
+    val version: Int by lazy(LazyThreadSafetyMode.NONE) { (raw[0].toInt() shr 4) and 0x0F }
+    val ihl: Int by lazy(LazyThreadSafetyMode.NONE) { (raw[0].toInt() and 0x0F) * 4 }
+    val protocol: Int by lazy(LazyThreadSafetyMode.NONE) { raw[9].toInt() and 0xFF }
+    val sourceIp: String by lazy(LazyThreadSafetyMode.NONE) { ipToString(raw, 12) }
+    val destIp: String by lazy(LazyThreadSafetyMode.NONE) { ipToString(raw, 16) }
 
-    val sourceIpBytes: ByteArray = raw.copyOfRange(12, 16)
-    val destIpBytes: ByteArray = raw.copyOfRange(16, 20)
+    val sourceIpBytes: ByteArray by lazy(LazyThreadSafetyMode.NONE) { raw.copyOfRange(12, 16) }
+    val destIpBytes: ByteArray by lazy(LazyThreadSafetyMode.NONE) { raw.copyOfRange(16, 20) }
 
-    val payloadOffset: Int = ihl
+    val payloadOffset: Int by lazy(LazyThreadSafetyMode.NONE) { ihl }
 
     fun isTcp(): Boolean = protocol == 6
 

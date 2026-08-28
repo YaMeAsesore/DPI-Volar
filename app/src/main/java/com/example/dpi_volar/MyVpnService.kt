@@ -19,6 +19,7 @@ class MyVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private var job: Job? = null
+    private var tunWriter: TunWriter? = null
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val sessions = ConcurrentHashMap<SessionKey, TcpSession>()
 
@@ -85,7 +86,7 @@ class MyVpnService : VpnService() {
         dstIpBytes: ByteArray,
         srcPort: Int,
         dstPort: Int,
-        tunOutput: FileOutputStream
+        tunWriter: TunWriter
     ) {
         // 1. Revisa el cache antes de hacer cualquier trabajo de red
         val cachedResponse = DnsCache.get(queryPayload)
@@ -95,9 +96,7 @@ class MyVpnService : VpnService() {
                 srcPort = dstPort, dstPort = srcPort,
                 payload = cachedResponse
             )
-            synchronized(tunOutput) {
-                tunOutput.write(replyPacket)
-            }
+            tunWriter.write(replyPacket)
             return // <-- respuesta instantánea, sin tocar la red
         }
 
@@ -126,9 +125,7 @@ class MyVpnService : VpnService() {
                         srcPort = dstPort, dstPort = srcPort,
                         payload = responseData
                     )
-                    synchronized(tunOutput) {
-                        tunOutput.write(replyPacket)
-                    }
+                    tunWriter.write(replyPacket)
                 }
             }
         } catch (e: Exception) {
@@ -164,6 +161,11 @@ class MyVpnService : VpnService() {
         val fd = vpnInterface?.fileDescriptor ?: return
         val input = FileInputStream(fd)
         val output = FileOutputStream(fd)
+        // Único escritor hacia la TUN, reemplaza el synchronized(tunOutput)
+        // compartido que usaban antes todas las sesiones + DNS (ver TunWriter.kt).
+        val tunWriter = TunWriter(output, scope)
+        tunWriter.start()
+        this.tunWriter = tunWriter
         val buffer = ByteArray(32767)
 
         while (coroutineContext.isActive) {
@@ -199,7 +201,7 @@ class MyVpnService : VpnService() {
                         val dstPort = udp.destPort
 
                         scope.launch {
-                            handleDnsQuery(queryPayload, srcIpBytes, dstIpBytes, srcPort, dstPort, output)
+                            handleDnsQuery(queryPayload, srcIpBytes, dstIpBytes, srcPort, dstPort, tunWriter)
                         }
                     }
                     continue
@@ -218,7 +220,7 @@ class MyVpnService : VpnService() {
                             clientIpBytes = packet.sourceIpBytes,
                             serverIpBytes = packet.destIpBytes,
                             vpnService = this,
-                            tunOutput = output,
+                            tunWriter = tunWriter,
                             scope = scope,
                             onClosed = { key -> sessions.remove(key) }
                         )
@@ -249,6 +251,8 @@ class MyVpnService : VpnService() {
         isRunning = false
         stopForeground(STOP_FOREGROUND_REMOVE)
         job?.cancel()
+        tunWriter?.close()
+        tunWriter = null
         sessions.values.forEach { it.close() }
         sessions.clear()
         try { vpnInterface?.close() } catch (e: Exception) {

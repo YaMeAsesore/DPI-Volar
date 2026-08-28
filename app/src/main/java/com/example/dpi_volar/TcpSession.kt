@@ -4,7 +4,6 @@ import android.net.VpnService
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
-import java.io.FileOutputStream
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -19,7 +18,7 @@ class TcpSession(
     private val clientIpBytes: ByteArray,
     private val serverIpBytes: ByteArray,
     private val vpnService: VpnService,
-    private val tunOutput: FileOutputStream,
+    private val tunWriter: TunWriter,
     private val scope: CoroutineScope,
     private val onClosed: (SessionKey) -> Unit
 ) {
@@ -36,6 +35,20 @@ class TcpSession(
     private val writeQueue = Channel<OutgoingChunk>(Channel.UNLIMITED)
     private val socketReady = CompletableDeferred<Unit>()
 
+    // OPTIMIZACIÓN: antes cada paquete de datos del cliente lanzaba una
+    // corrutina nueva (`scope.launch { sendControl(TCP_ACK) }`) solo para
+    // mandar el ACK. Con tráfico normal (streaming, descargas, muchos
+    // recursos cargando a la vez) esto son cientos o miles de corrutinas
+    // por segundo en TODA la app, cada una haciendo una escritura a la TUN.
+    // Un ACK de TCP es ACUMULATIVO: no hace falta mandar uno por cada
+    // paquete, con mandar el último (con el clientSeq más reciente) ya
+    // confirma todo lo anterior. CONFLATED significa que si llegan varias
+    // señales antes de que el consumidor alcance a procesarlas, solo se
+    // queda la más reciente — así, en vez de N corrutinas + N escrituras a
+    // la TUN por ráfaga de paquetes, hay UNA corrutina fija por sesión y,
+    // como mucho, una escritura por ráfaga.
+    private val ackSignal = Channel<Unit>(Channel.CONFLATED)
+
     suspend fun start(initialClientSeq: Long) {
         clientSeq = initialClientSeq + 1
         serverSeq = (0..Int.MAX_VALUE).random().toLong()
@@ -51,6 +64,14 @@ class TcpSession(
         // ya sabe reaccionar a eso.
         sendControl(PacketBuilder.TCP_SYN or PacketBuilder.TCP_ACK)
         serverSeq += 1
+
+        // Única corrutina consumidora de señales de ACK para esta sesión
+        // (ver comentario en la declaración de ackSignal más arriba).
+        scope.launch {
+            for (unit in ackSignal) {
+                sendControl(PacketBuilder.TCP_ACK)
+            }
+        }
 
         // Arranca ya a aceptar/ACKear datos del cliente. Lo que llegue se
         // queda en writeQueue (buffer ilimitado) hasta que el socket real
@@ -89,9 +110,9 @@ class TcpSession(
 
         val payloadEnd = incomingSeq + payload.size
         if (payloadEnd <= clientSeq) {
-            // Retransmisión ya confirmada: solo reenviar el ACK (en segundo
-            // plano, ver nota abajo), sin volver a encolar el dato.
-            scope.launch { sendControl(PacketBuilder.TCP_ACK) }
+            // Retransmisión ya confirmada: solo reenviar el ACK, sin volver
+            // a encolar el dato.
+            ackSignal.trySend(Unit)
             return
         }
 
@@ -101,15 +122,15 @@ class TcpSession(
         clientSeq = payloadEnd
 
         // OJO: onClientData() la llama directamente forwardPackets(), el
-        // único bucle que lee TODOS los paquetes de la TUN uno a uno. Si
-        // aquí mismo escribiéramos el ACK de forma síncrona (writeToTun usa
-        // un candado compartido con el resto de sesiones), estaríamos
-        // bloqueando la lectura de paquetes de TODA la app cada vez que
-        // llega un dato — eso fue lo que causó que "ahora tarde de más".
-        // Por eso el envío del ACK se despacha en una corrutina aparte: sigue
-        // siendo prácticamente inmediato (evita las retransmisiones), pero
-        // ya no compite por tiempo con la lectura de la TUN.
-        scope.launch { sendControl(PacketBuilder.TCP_ACK) }
+        // único bucle que lee TODOS los paquetes de la TUN uno a uno. No
+        // queremos hacer trabajo bloqueante aquí mismo. `trySend` sobre un
+        // canal CONFLATED es una operación no bloqueante y casi gratis (solo
+        // guarda "hay un ACK pendiente con este clientSeq"); la corrutina
+        // consumidora fija de la sesión (lanzada una sola vez en start())
+        // es la que de verdad manda el paquete. Así seguimos ACKeando casi
+        // de inmediato (evita retransmisiones) sin lanzar una corrutina
+        // nueva por cada paquete que llega.
+        ackSignal.trySend(Unit)
 
         writeQueue.trySend(OutgoingChunk(payload, incomingSeq))
     }
@@ -285,19 +306,14 @@ class TcpSession(
     }
 
     private fun writeToTun(packet: ByteArray) {
-        try {
-            synchronized(tunOutput) {
-                tunOutput.write(packet)
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Error escribiendo a la TUN: ${e.message}")
-        }
+        tunWriter.write(packet)
     }
 
     fun close() {
         if (closed) return
         closed = true
         writeQueue.close()
+        ackSignal.close()
         try { socket.close() } catch (_: Exception) {}
         onClosed(key)
     }
