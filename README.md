@@ -58,7 +58,7 @@ Android la trata como "VPN" a nivel de sistema porque técnicamente usa
 pero eso es solo el mecanismo que da acceso a interceptar paquetes, no
 implica un túnel hacia ningún servidor externo.
 
-En resumen: es una herramienta de manipulación de paquetes local para
+Es una herramienta de manipulación de paquetes local para
 evadir DPI, no una VPN de anonimato. Ocultar IP o ubicación no está
 implementado todavía.
 
