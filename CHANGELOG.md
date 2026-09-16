@@ -1,5 +1,36 @@
 # Changelog
 
+## [2.2.0] - 2026-09-16
+
+Corrección de estabilidad para sesiones TCP y actualización completa del
+icono de la aplicación.
+
+### Corregido
+
+- **Sesiones TCP bloqueadas indefinidamente.** `TcpSession` podía quedarse
+  esperando para siempre en `socket.getInputStream().read()` cuando el
+  servidor mantenía una conexión keep-alive en silencio o el dispositivo
+  cambiaba de red. Ahora cada socket usa un timeout de lectura de 60
+  segundos y `readFromServer()` cierra la sesión limpiamente cuando expira.
+  Esto evita acumular hilos, descriptores y sesiones zombis.
+- **Sesiones antiguas para una misma clave TCP.** Cuando llega un SYN nuevo
+  para una clave IP+puerto que ya tiene una sesión activa,
+  `MyVpnService.forwardPackets()` cierra la sesión anterior antes de crear
+  la nueva, en lugar de ignorar silenciosamente la conexión.
+
+### Cambiado
+
+- **Icono adaptativo.** Se añadieron `ic_launcher.xml` y
+  `ic_launcher_round.xml`, fondos y foregrounds adaptativos, y recursos
+  legacy regenerados en las cinco densidades. El emblema ahora respeta la
+  zona segura del launcher y usa un fondo beige consistente.
+- Se movieron las imágenes fuente del icono a `app/icon_sources/` para
+  evitar nombres con mayúsculas que no son válidos como recursos Android.
+
+### Notas de verificación
+
+- `:app:processDebugResources` completó correctamente.
+
 ## [2.1.0] - 2026-08-27
 
 Tercera ronda de correcciones, enfocada en dos problemas que persistían
