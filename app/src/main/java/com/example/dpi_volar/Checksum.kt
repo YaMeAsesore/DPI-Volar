@@ -2,7 +2,6 @@ package com.example.dpi_volar
 
 object Checksum {
 
-    /** Checksum estándar de Internet (RFC 1071), usado por IP y TCP. */
     fun compute(data: ByteArray, offset: Int, length: Int): Int {
         var sum = 0L
         var i = offset
@@ -23,7 +22,6 @@ object Checksum {
         return (sum.inv() and 0xFFFF).toInt()
     }
 
-    /** Checksum TCP requiere un "pseudo-header" con IPs y protocolo. */
     fun tcpChecksum(
         srcIp: ByteArray, dstIp: ByteArray,
         tcpSegment: ByteArray, tcpLength: Int
@@ -32,7 +30,7 @@ object Checksum {
         System.arraycopy(srcIp, 0, pseudoHeader, 0, 4)
         System.arraycopy(dstIp, 0, pseudoHeader, 4, 4)
         pseudoHeader[8] = 0
-        pseudoHeader[9] = 6 // protocolo TCP
+        pseudoHeader[9] = 6
         pseudoHeader[10] = ((tcpLength shr 8) and 0xFF).toByte()
         pseudoHeader[11] = (tcpLength and 0xFF).toByte()
         System.arraycopy(tcpSegment, 0, pseudoHeader, 12, tcpLength)

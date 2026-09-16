@@ -2,10 +2,6 @@ package com.example.dpi_volar
 
 object PacketBuilder {
 
-    /**
-     * Construye un paquete IPv4 + TCP completo, listo para escribir a la TUN.
-     * srcIp/dstIp deben ser arrays de 4 bytes.
-     */
     fun buildUdpPacket(
         srcIp: ByteArray, dstIp: ByteArray,
         srcPort: Int, dstPort: Int,
@@ -18,7 +14,6 @@ object PacketBuilder {
 
         val packet = ByteArray(totalLength)
 
-        // ---- IP Header ----
         packet[0] = 0x45
         packet[1] = 0
         packet[2] = ((totalLength shr 8) and 0xFF).toByte()
@@ -26,7 +21,7 @@ object PacketBuilder {
         packet[4] = 0; packet[5] = 0
         packet[6] = 0x40.toByte(); packet[7] = 0
         packet[8] = 64
-        packet[9] = 17 // protocolo UDP
+        packet[9] = 17
         packet[10] = 0; packet[11] = 0
         System.arraycopy(srcIp, 0, packet, 12, 4)
         System.arraycopy(dstIp, 0, packet, 16, 4)
@@ -35,7 +30,6 @@ object PacketBuilder {
         packet[10] = ((ipChecksum shr 8) and 0xFF).toByte()
         packet[11] = (ipChecksum and 0xFF).toByte()
 
-        // ---- UDP Header ----
         val udpOffset = ipHeaderLength
         packet[udpOffset] = ((srcPort shr 8) and 0xFF).toByte()
         packet[udpOffset + 1] = (srcPort and 0xFF).toByte()
@@ -43,7 +37,7 @@ object PacketBuilder {
         packet[udpOffset + 3] = (dstPort and 0xFF).toByte()
         packet[udpOffset + 4] = ((udpTotalLength shr 8) and 0xFF).toByte()
         packet[udpOffset + 5] = (udpTotalLength and 0xFF).toByte()
-        packet[udpOffset + 6] = 0; packet[udpOffset + 7] = 0 // checksum opcional en UDP/IPv4, lo dejamos en 0
+        packet[udpOffset + 6] = 0; packet[udpOffset + 7] = 0
 
         System.arraycopy(payload, 0, packet, udpOffset + udpHeaderLength, payload.size)
 
@@ -53,7 +47,7 @@ object PacketBuilder {
         srcIp: ByteArray, dstIp: ByteArray,
         srcPort: Int, dstPort: Int,
         seqNum: Long, ackNum: Long,
-        flags: Int, // ej: TCP_SYN or TCP_ACK
+        flags: Int,
         payload: ByteArray = ByteArray(0)
     ): ByteArray {
         val tcpHeaderLength = 20
@@ -63,16 +57,15 @@ object PacketBuilder {
 
         val packet = ByteArray(totalLength)
 
-        // ---- IP Header ----
-        packet[0] = 0x45 // version 4, IHL 5 (20 bytes)
+        packet[0] = 0x45
         packet[1] = 0
         packet[2] = ((totalLength shr 8) and 0xFF).toByte()
         packet[3] = (totalLength and 0xFF).toByte()
-        packet[4] = 0; packet[5] = 0 // ID
-        packet[6] = 0x40.toByte(); packet[7] = 0 // flags: Don't Fragment
-        packet[8] = 64 // TTL
-        packet[9] = 6 // protocolo TCP
-        packet[10] = 0; packet[11] = 0 // checksum (se calcula después)
+        packet[4] = 0; packet[5] = 0
+        packet[6] = 0x40.toByte(); packet[7] = 0
+        packet[8] = 64
+        packet[9] = 6
+        packet[10] = 0; packet[11] = 0
         System.arraycopy(srcIp, 0, packet, 12, 4)
         System.arraycopy(dstIp, 0, packet, 16, 4)
 
@@ -80,7 +73,6 @@ object PacketBuilder {
         packet[10] = ((ipChecksum shr 8) and 0xFF).toByte()
         packet[11] = (ipChecksum and 0xFF).toByte()
 
-        // ---- TCP Header ----
         val tcpOffset = ipHeaderLength
         packet[tcpOffset] = ((srcPort shr 8) and 0xFF).toByte()
         packet[tcpOffset + 1] = (srcPort and 0xFF).toByte()
@@ -97,11 +89,11 @@ object PacketBuilder {
         packet[tcpOffset + 10] = ((ackNum shr 8) and 0xFF).toByte()
         packet[tcpOffset + 11] = (ackNum and 0xFF).toByte()
 
-        packet[tcpOffset + 12] = (5 shl 4).toByte() // data offset = 5 (20 bytes), sin opciones
+        packet[tcpOffset + 12] = (5 shl 4).toByte()
         packet[tcpOffset + 13] = flags.toByte()
-        packet[tcpOffset + 14] = 0xFF.toByte(); packet[tcpOffset + 15] = 0xFF.toByte() // window size
-        packet[tcpOffset + 16] = 0; packet[tcpOffset + 17] = 0 // checksum (después)
-        packet[tcpOffset + 18] = 0; packet[tcpOffset + 19] = 0 // urgent pointer
+        packet[tcpOffset + 14] = 0xFF.toByte(); packet[tcpOffset + 15] = 0xFF.toByte()
+        packet[tcpOffset + 16] = 0; packet[tcpOffset + 17] = 0
+        packet[tcpOffset + 18] = 0; packet[tcpOffset + 19] = 0
 
         if (payload.isNotEmpty()) {
             System.arraycopy(payload, 0, packet, tcpOffset + tcpHeaderLength, payload.size)

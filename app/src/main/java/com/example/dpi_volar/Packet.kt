@@ -8,16 +8,16 @@ class IPv4Packet(private val raw: ByteArray, private val length: Int) {
         return UdpSegment(raw, payloadOffset, length)
     }
 
-    val version: Int = (raw[0].toInt() shr 4) and 0x0F
-    val ihl: Int = (raw[0].toInt() and 0x0F) * 4
-    val protocol: Int = raw[9].toInt() and 0xFF
-    val sourceIp: String = ipToString(raw, 12)
-    val destIp: String = ipToString(raw, 16)
+    val version: Int by lazy(LazyThreadSafetyMode.NONE) { (raw[0].toInt() shr 4) and 0x0F }
+    val ihl: Int by lazy(LazyThreadSafetyMode.NONE) { (raw[0].toInt() and 0x0F) * 4 }
+    val protocol: Int by lazy(LazyThreadSafetyMode.NONE) { raw[9].toInt() and 0xFF }
+    val sourceIp: String by lazy(LazyThreadSafetyMode.NONE) { ipToString(raw, 12) }
+    val destIp: String by lazy(LazyThreadSafetyMode.NONE) { ipToString(raw, 16) }
 
-    val sourceIpBytes: ByteArray = raw.copyOfRange(12, 16)
-    val destIpBytes: ByteArray = raw.copyOfRange(16, 20)
+    val sourceIpBytes: ByteArray by lazy(LazyThreadSafetyMode.NONE) { raw.copyOfRange(12, 16) }
+    val destIpBytes: ByteArray by lazy(LazyThreadSafetyMode.NONE) { raw.copyOfRange(16, 20) }
 
-    val payloadOffset: Int = ihl
+    val payloadOffset: Int by lazy(LazyThreadSafetyMode.NONE) { ihl }
 
     fun isTcp(): Boolean = protocol == 6
 
@@ -53,7 +53,6 @@ class TcpSegment(private val raw: ByteArray, private val offset: Int, private va
     val destPort: Int = ((raw[offset + 2].toInt() and 0xFF) shl 8) or (raw[offset + 3].toInt() and 0xFF)
     val dataOffset: Int = ((raw[offset + 12].toInt() shr 4) and 0x0F) * 4
 
-    // Secuencia del CLIENTE (importante: la necesitamos para el ACK)
     val seqNum: Long = readUInt32(offset + 4)
 
     val flags: Int = raw[offset + 13].toInt() and 0xFF
