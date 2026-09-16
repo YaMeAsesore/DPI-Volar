@@ -21,18 +21,19 @@ procesamiento pasa por tu propio dispositivo.
 
 | Versión | APK | Cambios |
 |---|---|---|
-| **v2.1.0** (actual) | [Descargar APK](https://www.mediafire.com/file/2klrkbe8ulmkhar/app-debug.apk/file) | [Ver detalle](CHANGELOG.md#210---2026-08-27) |
+| **v2.2.0** (actual) | [Descargar APK](https://www.mediafire.com/file/kjncklrp2l5je56/DPI_volar.apk/file) | [Ver detalle](CHANGELOG.md#220---2026-09-16) |
+| v2.1.0 | [Descargar APK](https://www.mediafire.com/file/2klrkbe8ulmkhar/app-debug.apk/file) | [Ver detalle](CHANGELOG.md#210---2026-08-27) |
 | v2.0.0 | [Descargar APK](https://www.mediafire.com/file/43jraftynsfnd4a/DPI-VOLARv2.apk/file) | [Ver detalle](CHANGELOG.md#200---2026-07-27) |
 | v1.0.0 | [Descargar APK](https://www.mediafire.com/file/w9bmv0ilbtb9a43/DPI-VOLAR.apk/file) | — |
 
 El historial completo, con el porqué de cada cambio, está en [CHANGELOG.md](CHANGELOG.md).
 
-La v2.1.0 es un build de depuración (`app-debug.apk`) centrado en
-rendimiento: corrige el consumo de batería/calor y la lentitud de
-conexión que aparecían con navegación pesada en la v2.0.0. El
-comportamiento de evasión de DPI (SPLIT, DISORDER, fragmentación por
-SNI) es el mismo que en la v2.0.0 — lo que cambia es cómo la app maneja
-los hilos y las escrituras internas, no la técnica en sí.
+La v2.2.0 corrige un fallo de estabilidad que podía hacer que la app
+dejara de funcionar tras un tiempo de uso: las sesiones TCP podían
+quedarse bloqueadas indefinidamente, agotando hilos y descriptores de
+archivo. También incorpora el icono adaptativo completo, con foreground
+redimensionado para respetar la zona segura del launcher, fondo beige y
+recursos legacy regenerados para las cinco densidades.
 
 ---
 
@@ -105,13 +106,14 @@ Android 8.0 (API 26) o superior, y ejecútalo con el botón Run.
 
 La v2 trae la lógica funcional de evasión de DPI: detección y
 fragmentación del ClientHello, corte consciente del SNI, rotación
-automática de técnica y cache de DNS. La v2.1.0 no toca esa lógica —
-corrige tres problemas de rendimiento que aparecían con navegación
-pesada (muchas conexiones concurrentes abriéndose a la vez): un pool de
-hilos de red que se quedaba corto y generaba reintentos y lentitud, un
-lock compartido en la escritura hacia la TUN, y una corrutina lanzada
-por cada paquete solo para confirmar su recepción. El detalle completo,
-con el porqué de cada uno, está en el [CHANGELOG](CHANGELOG.md).
+automática de técnica y cache de DNS. La v2.1.0 optimizó el pool de
+hilos, las escrituras hacia la TUN, los ACK y el cálculo de campos de
+paquetes. La v2.2.0 añade un timeout de lectura y cierre limpio para
+sesiones TCP inactivas, además de reemplazar sesiones antiguas cuando
+llega un SYN nuevo con la misma clave. También actualiza el icono
+adaptativo y elimina recursos de imagen que no son válidos como recursos
+Android por sus nombres con mayúsculas. El detalle completo está en el
+[CHANGELOG](CHANGELOG.md).
 
 Sigue pendiente validar el consumo de batería y la temperatura en
 dispositivo físico bajo uso prolongado (lo probado hasta ahora fue
