@@ -2,23 +2,18 @@ package com.example.dpi_volar
 
 object TlsParser {
 
-    /**
-     * Recorre la estructura de un ClientHello TLS y localiza el hostname
-     * dentro de la extensión SNI.
-     * Devuelve Pair(offsetAbsoluto, longitud) del hostname, o null si no se encuentra.
-     */
     fun findSniHostname(data: ByteArray): Pair<Int, Int>? {
         try {
             if (data.size < 5) return null
-            if ((data[0].toInt() and 0xFF) != 0x16) return null // no es TLS Handshake
+            if ((data[0].toInt() and 0xFF) != 0x16) return null
 
-            var pos = 5 // salta el Record Header
+            var pos = 5
             if (pos + 4 > data.size) return null
-            if ((data[pos].toInt() and 0xFF) != 0x01) return null // no es ClientHello
+            if ((data[pos].toInt() and 0xFF) != 0x01) return null
 
-            pos += 4   // Handshake Header (type + length de 3 bytes)
-            pos += 2   // client_version
-            pos += 32  // random
+            pos += 4
+            pos += 2
+            pos += 32
 
             if (pos >= data.size) return null
             val sessionIdLen = data[pos].toInt() and 0xFF
@@ -42,10 +37,10 @@ object TlsParser {
                 val extLen = ((data[pos + 2].toInt() and 0xFF) shl 8) or (data[pos + 3].toInt() and 0xFF)
                 val extDataStart = pos + 4
 
-                if (extType == 0x0000) { // extensión "server_name" (SNI)
+                if (extType == 0x0000) {
                     var sniPos = extDataStart
                     if (sniPos + 2 > data.size) return null
-                    sniPos += 2 // server_name_list_length
+                    sniPos += 2
 
                     if (sniPos + 3 > data.size) return null
                     val nameType = data[sniPos].toInt() and 0xFF
@@ -53,7 +48,7 @@ object TlsParser {
                     sniPos += 3
 
                     return if (nameType == 0 && sniPos + nameLen <= data.size) {
-                        Pair(sniPos, nameLen) // offset absoluto + longitud del hostname
+                        Pair(sniPos, nameLen)
                     } else null
                 }
 
@@ -61,7 +56,7 @@ object TlsParser {
             }
             return null
         } catch (e: Exception) {
-            return null // cualquier estructura inesperada -> fallback seguro
+            return null
         }
     }
 }

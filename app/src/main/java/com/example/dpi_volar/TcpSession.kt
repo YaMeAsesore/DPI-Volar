@@ -7,6 +7,7 @@ import kotlinx.coroutines.channels.Channel
 import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.SocketTimeoutException
 
 data class SessionKey(
     val srcIp: String, val srcPort: Int,
@@ -22,7 +23,10 @@ class TcpSession(
     private val scope: CoroutineScope,
     private val onClosed: (SessionKey) -> Unit
 ) {
-    companion object { const val TAG = "TcpSession" }
+    companion object {
+        const val TAG = "TcpSession"
+        private const val SOCKET_READ_TIMEOUT_MS = 60_000
+    }
 
     private var clientSeq: Long = 0
     private var serverSeq: Long = 0
@@ -35,18 +39,6 @@ class TcpSession(
     private val writeQueue = Channel<OutgoingChunk>(Channel.UNLIMITED)
     private val socketReady = CompletableDeferred<Unit>()
 
-    // OPTIMIZACIÓN: antes cada paquete de datos del cliente lanzaba una
-    // corrutina nueva (`scope.launch { sendControl(TCP_ACK) }`) solo para
-    // mandar el ACK. Con tráfico normal (streaming, descargas, muchos
-    // recursos cargando a la vez) esto son cientos o miles de corrutinas
-    // por segundo en TODA la app, cada una haciendo una escritura a la TUN.
-    // Un ACK de TCP es ACUMULATIVO: no hace falta mandar uno por cada
-    // paquete, con mandar el último (con el clientSeq más reciente) ya
-    // confirma todo lo anterior. CONFLATED significa que si llegan varias
-    // señales antes de que el consumidor alcance a procesarlas, solo se
-    // queda la más reciente — así, en vez de N corrutinas + N escrituras a
-    // la TUN por ráfaga de paquetes, hay UNA corrutina fija por sesión y,
-    // como mucho, una escritura por ráfaga.
     private val ackSignal = Channel<Unit>(Channel.CONFLATED)
 
     suspend fun start(initialClientSeq: Long) {
@@ -55,29 +47,15 @@ class TcpSession(
 
         socket = Socket()
 
-        // Contestamos el handshake al CLIENTE ya, sin esperar a que la
-        // conexión real contra el servidor destino termine. Antes se hacía
-        // al revés (conectar primero, ACKear después), lo que añadía un RTT
-        // completo de espera por cada conexión nueva antes de que el
-        // navegador pudiera siquiera mandar el ClientHello. Si la conexión
-        // real falla más abajo, se manda RST igual que antes — el navegador
-        // ya sabe reaccionar a eso.
         sendControl(PacketBuilder.TCP_SYN or PacketBuilder.TCP_ACK)
         serverSeq += 1
 
-        // Única corrutina consumidora de señales de ACK para esta sesión
-        // (ver comentario en la declaración de ackSignal más arriba).
         scope.launch {
             for (unit in ackSignal) {
                 sendControl(PacketBuilder.TCP_ACK)
             }
         }
 
-        // Arranca ya a aceptar/ACKear datos del cliente. Lo que llegue se
-        // queda en writeQueue (buffer ilimitado) hasta que el socket real
-        // esté listo; processWriteQueue espera a socketReady antes de
-        // escribir de verdad, así que nada se pierde ni se envía antes de
-        // tiempo.
         scope.launch { processWriteQueue() }
 
         try {
@@ -90,8 +68,10 @@ class TcpSession(
 
             withContext(NetworkDispatcher.IO) {
                 val addr = InetAddress.getByAddress(serverIpBytes)
-                socket.connect(InetSocketAddress(addr, key.dstPort), 3000) // timeout reducido
+                socket.connect(InetSocketAddress(addr, key.dstPort), 3000)
                 socket.tcpNoDelay = true
+                socket.keepAlive = true
+                socket.soTimeout = SOCKET_READ_TIMEOUT_MS
             }
 
             socketReady.complete(Unit)
@@ -110,26 +90,12 @@ class TcpSession(
 
         val payloadEnd = incomingSeq + payload.size
         if (payloadEnd <= clientSeq) {
-            // Retransmisión ya confirmada: solo reenviar el ACK, sin volver
-            // a encolar el dato.
             ackSignal.trySend(Unit)
             return
         }
 
-        // Actualizar clientSeq aquí es solo una asignación de variable (muy
-        // rápido, no bloquea nada), así que se hace ya mismo para que
-        // futuras comprobaciones de retransmisión sean correctas.
         clientSeq = payloadEnd
 
-        // OJO: onClientData() la llama directamente forwardPackets(), el
-        // único bucle que lee TODOS los paquetes de la TUN uno a uno. No
-        // queremos hacer trabajo bloqueante aquí mismo. `trySend` sobre un
-        // canal CONFLATED es una operación no bloqueante y casi gratis (solo
-        // guarda "hay un ACK pendiente con este clientSeq"); la corrutina
-        // consumidora fija de la sesión (lanzada una sola vez en start())
-        // es la que de verdad manda el paquete. Así seguimos ACKeando casi
-        // de inmediato (evita retransmisiones) sin lanzar una corrutina
-        // nueva por cada paquete que llega.
         ackSignal.trySend(Unit)
 
         writeQueue.trySend(OutgoingChunk(payload, incomingSeq))
@@ -138,10 +104,6 @@ class TcpSession(
     private suspend fun processWriteQueue() {
         try {
             for (chunk in writeQueue) {
-                // Espera a que el socket real esté conectado antes de escribir
-                // este chunk. El ACK al cliente ya se mandó al recibir el
-                // dato (ver onClientData); aquí solo se pausa el envío real
-                // al servidor destino.
                 socketReady.await()
 
                 val isClientHello = !firstDataSent &&
@@ -170,7 +132,6 @@ class TcpSession(
         }
     }
 
-    /** Punto único de despacho: aplica la técnica elegida sobre el ClientHello. */
     private suspend fun applyTechnique(technique: DpiTechnique, data: ByteArray) {
         when (technique) {
             DpiTechnique.SPLIT -> sendSplit(data, reverse = false)
@@ -185,7 +146,6 @@ class TcpSession(
         }
     }
 
-    /** Técnica SPLIT / DISORDER: corta en 2 (dentro del SNI si se puede) y las manda en orden normal o invertido. */
     private suspend fun sendSplit(data: ByteArray, reverse: Boolean) {
         val splitAt: Int
         val reason: String
@@ -224,13 +184,6 @@ class TcpSession(
         }
     }
 
-    /**
-     * Técnica FAKE PACKET: manda un paquete señuelo antes del ClientHello real.
-     * NOTA: excluida de la rotación automática en TechniqueStats porque, sin
-     * control de TTL a nivel de socket (requiere sockets crudos/NDK), este
-     * señuelo llega al servidor real y corrompe el stream TLS. Se deja el
-     * código por si en el futuro se implementa vía sockets nativos.
-     */
     private suspend fun sendFakePacketThenReal(data: ByteArray) {
         Log.i(TAG, "Técnica FAKE_PACKET para ${key.dstIp}:${key.dstPort}")
 
@@ -248,10 +201,10 @@ class TcpSession(
 
     private fun buildFakeClientHello(size: Int): ByteArray {
         val fake = ByteArray(size)
-        fake[0] = 0x16 // TLS Handshake
-        fake[1] = 0x03; fake[2] = 0x01 // TLS 1.0
+        fake[0] = 0x16
+        fake[1] = 0x03; fake[2] = 0x01
         fake[3] = 0; fake[4] = (size - 5).toByte()
-        fake[5] = 0x01 // ClientHello
+        fake[5] = 0x01
         for (i in 6 until size) fake[i] = (0..255).random().toByte()
         return fake
     }
@@ -265,7 +218,12 @@ class TcpSession(
         var reportedSuccess = false
         try {
             while (true) {
-                val n = withContext(NetworkDispatcher.IO) { socket.getInputStream().read(buffer) }
+                val n = try {
+                    withContext(NetworkDispatcher.IO) { socket.getInputStream().read(buffer) }
+                } catch (e: SocketTimeoutException) {
+                    Log.w(TAG, "Timeout de lectura sin actividad, cerrando sesión inactiva ${key.dstIp}:${key.dstPort}")
+                    break
+                }
                 if (n <= 0) break
 
                 if (!reportedSuccess && currentTechnique != DpiTechnique.NONE) {

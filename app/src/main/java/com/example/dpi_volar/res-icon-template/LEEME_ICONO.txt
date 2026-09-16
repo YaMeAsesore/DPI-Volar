@@ -1,0 +1,26 @@
+Por qué se ve cuadrado el icono
+--------------------------------
+Android solo redondea el icono automáticamente si la app usa un "adaptive icon"
+(fondo + primer plano separados) y el manifest declara android:roundIcon. Si
+solo existe un PNG cuadrado en mipmap-hdpi/mipmap-xhdpi/etc. como ic_launcher.png,
+algunos launchers (sobre todo los que no recortan ellos mismos) lo muestran tal
+cual, cuadrado.
+
+Pasos para arreglarlo:
+1. En Android Studio: clic derecho en res/ -> New -> Image Asset.
+2. Elige "Launcher Icons (Adaptive and Legacy)".
+3. Sube tu logo como Foreground Layer (con márgenes, sin fondo) y define un
+   Background Layer (color sólido o imagen).
+4. Esto genera automáticamente:
+   - mipmap-anydpi-v26/ic_launcher.xml
+   - mipmap-anydpi-v26/ic_launcher_round.xml
+   - mipmap-*dpi/ic_launcher.png y ic_launcher_round.png (para Android < 8.0)
+   - mipmap-*dpi-v26/ic_launcher_foreground.png / ic_launcher_background.xml
+5. Verifica en AndroidManifest.xml que la etiqueta <application> tenga:
+     android:icon="@mipmap/ic_launcher"
+     android:roundIcon="@mipmap/ic_launcher_round"
+
+He incluido en esta carpeta una plantilla mínima de ic_launcher.xml /
+ic_launcher_round.xml (adaptive icon) por si prefieres crear tú mismo los
+recursos ic_launcher_background y ic_launcher_foreground a mano en vez de usar
+el asistente de Android Studio.

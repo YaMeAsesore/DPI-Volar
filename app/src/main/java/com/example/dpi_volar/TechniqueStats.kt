@@ -2,10 +2,6 @@ package com.example.dpi_volar
 
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Recuerda qué técnica tuvo éxito la última vez para un host+puerto dado, y rota
- * automáticamente a la siguiente técnica cuando una falla varias veces seguidas.
- */
 object TechniqueStats {
 
     private data class Record(
@@ -14,12 +10,8 @@ object TechniqueStats {
         var confirmedWorking: Boolean
     )
 
-    // Umbral: cuántos fallos seguidos antes de probar la siguiente técnica.
     private const val FAILURE_THRESHOLD = 2
 
-    // FAKE_PACKET excluido: requiere control de TTL a nivel de socket crudo,
-    // no disponible vía java.net.Socket sin permisos root/NDK. Si se activa,
-    // corrompe el stream real garantizadamente (ver net_error -107 en Chrome).
     private val order = listOf(
         DpiTechnique.SPLIT,
         DpiTechnique.DISORDER,
@@ -61,13 +53,9 @@ object TechniqueStats {
 
     private fun nextTechnique(current: DpiTechnique): DpiTechnique {
         val idx = order.indexOf(current)
-        // Si la técnica actual es FAKE_PACKET (ya no está en `order` pero pudo
-        // quedar guardada de una sesión previa), el idx será -1; en ese caso
-        // arrancamos desde el principio de la lista.
         return if (idx == -1) order[0] else order[(idx + 1) % order.size]
     }
 
-    /** Para mostrar en la pantalla de diagnóstico (Paso 5). */
     fun snapshot(): Map<String, Pair<DpiTechnique, Boolean>> {
         return records.mapValues { (_, r) -> r.currentTechnique to r.confirmedWorking }
     }

@@ -8,26 +8,6 @@ class IPv4Packet(private val raw: ByteArray, private val length: Int) {
         return UdpSegment(raw, payloadOffset, length)
     }
 
-    // OPTIMIZACIÓN: antes estos campos eran `val` normales, es decir, se
-    // calculaban TODOS en el instante en que se crea el IPv4Packet — para
-    // CADA paquete que pasa por la VPN, sin excepción. Eso incluye construir
-    // dos Strings de IP por concatenación (sourceIp/destIp) y copiar 8 bytes
-    // (sourceIpBytes/destIpBytes) aunque el paquete se vaya a descartar dos
-    // líneas después en forwardPackets() por no ser TCP ni UDP, o aunque ese
-    // campo en particular nunca se llegue a leer para ese paquete en concreto.
-    // Con tráfico normal esto son miles de paquetes por segundo -> miles de
-    // Strings y arrays basura por segundo para el recolector de basura, lo
-    // cual es trabajo de CPU constante y de fondo, exactamente el tipo de
-    // cosa que se nota como "calentamiento constante" aunque cada operación
-    // individual sea barata.
-    //
-    // `by lazy` hace que el valor se calcule solo la primera vez que
-    // alguien lo lee. Usamos NONE (sin sincronización) porque cada
-    // IPv4Packet se construye y se lee dentro del mismo hilo del bucle de
-    // forwardPackets antes de que cualquier valor cruce a otra corrutina
-    // (los sitios que necesitan pasar estos datos a otra corrutona, como
-    // handleDnsQuery, ya los leen y copian a variables locales ANTES de
-    // lanzar esa corrutina — ver comentario en MyVpnService).
     val version: Int by lazy(LazyThreadSafetyMode.NONE) { (raw[0].toInt() shr 4) and 0x0F }
     val ihl: Int by lazy(LazyThreadSafetyMode.NONE) { (raw[0].toInt() and 0x0F) * 4 }
     val protocol: Int by lazy(LazyThreadSafetyMode.NONE) { raw[9].toInt() and 0xFF }
@@ -73,7 +53,6 @@ class TcpSegment(private val raw: ByteArray, private val offset: Int, private va
     val destPort: Int = ((raw[offset + 2].toInt() and 0xFF) shl 8) or (raw[offset + 3].toInt() and 0xFF)
     val dataOffset: Int = ((raw[offset + 12].toInt() shr 4) and 0x0F) * 4
 
-    // Secuencia del CLIENTE (importante: la necesitamos para el ACK)
     val seqNum: Long = readUInt32(offset + 4)
 
     val flags: Int = raw[offset + 13].toInt() and 0xFF

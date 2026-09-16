@@ -13,21 +13,12 @@ import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import javax.net.ssl.SNIHostName
 
-/**
- * Cliente DNS-over-HTTPS mínimo (RFC 8484), sin dependencias externas.
- * Se conecta por IP literal a Cloudflare para evitar el problema de
- * "necesito DNS para resolver el propio servidor DNS".
- */
 object DohClient {
     private const val TAG = "DohClient"
     private const val DOH_IP = "1.1.1.1"
-    private const val DOH_HOSTNAME = "cloudflare-dns.com" // usado para SNI y verificación de certificado
+    private const val DOH_HOSTNAME = "cloudflare-dns.com"
     private const val DOH_PATH = "/dns-query"
 
-    /**
-     * Envía una consulta DNS en formato "wire" crudo (los mismos bytes que llegan
-     * por UDP puerto 53) y devuelve la respuesta también en formato wire crudo.
-     */
     suspend fun resolve(vpnService: VpnService, queryBytes: ByteArray): ByteArray? {
         return withContext(Dispatchers.IO) {
             var plainSocket: Socket? = null
@@ -35,22 +26,20 @@ object DohClient {
             try {
                 plainSocket = Socket()
                 plainSocket.bind(InetSocketAddress(0))
-                vpnService.protect(plainSocket) // evita que este tráfico vuelva a entrar en la VPN
+                vpnService.protect(plainSocket)
 
-                val addr = InetAddress.getByName(DOH_IP) // IP literal: NO dispara resolución DNS
+                val addr = InetAddress.getByName(DOH_IP)
                 plainSocket.connect(InetSocketAddress(addr, 443), 5000)
 
                 val factory = SSLSocketFactory.getDefault() as SSLSocketFactory
                 sslSocket = factory.createSocket(plainSocket, DOH_HOSTNAME, 443, true) as SSLSocket
 
-                // Fuerza el SNI a "cloudflare-dns.com" aunque conectamos por IP
                 val params = SSLParameters()
                 params.serverNames = listOf(SNIHostName(DOH_HOSTNAME))
                 sslSocket.sslParameters = params
 
                 sslSocket.startHandshake()
 
-                // Verifica que el certificado sea válido para el hostname esperado
                 val verifier = javax.net.ssl.HttpsURLConnection.getDefaultHostnameVerifier()
                 if (!verifier.verify(DOH_HOSTNAME, sslSocket.session)) {
                     Log.e(TAG, "Certificado TLS inválido para $DOH_HOSTNAME")
@@ -83,11 +72,9 @@ object DohClient {
         }
     }
 
-    /** Lee una respuesta HTTP/1.1 completa y devuelve solo el cuerpo (la respuesta DNS cruda). */
     private fun readHttpResponse(socket: SSLSocket): ByteArray? {
         val input = BufferedInputStream(socket.inputStream)
 
-        // Lee las cabeceras línea por línea hasta la línea vacía
         val headerBytes = ArrayList<Byte>()
         var prevWasCR = false
         var consecutiveNewlines = 0
@@ -99,7 +86,7 @@ object DohClient {
                 '\r' -> { }
                 '\n' -> {
                     consecutiveNewlines++
-                    if (consecutiveNewlines == 2) break // \r\n\r\n encontrado
+                    if (consecutiveNewlines == 2) break
                     continue
                 }
                 else -> { consecutiveNewlines = 0 }
@@ -128,7 +115,7 @@ object DohClient {
             }
             body
         } else {
-            input.readBytes() // fallback: leer hasta que el servidor cierre la conexión
+            input.readBytes()
         }
     }
 }
